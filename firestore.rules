@@ -1,7 +1,7 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
+
     // Global Safety Net
     match /{document=**} {
       allow read, write: if false;
@@ -11,17 +11,9 @@ service cloud.firestore {
     function isSignedIn() {
       return request.auth != null;
     }
-    
+
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
-    }
-
-    function incoming() {
-      return request.resource.data;
-    }
-
-    function existing() {
-      return resource.data;
     }
 
     // --- Users ---
@@ -49,21 +41,39 @@ service cloud.firestore {
     // --- Chats ---
     match /chats/{chatId} {
       allow read, write: if isSignedIn();
-      
+
       match /messages/{messageId} {
         allow read, write: if isSignedIn();
       }
     }
 
     // --- Wallets ---
+    // SECURITY: balances and transactions are READ-ONLY for clients.
+    // All balance changes happen server-side in Cloud Functions (Payme webhook,
+    // release-funds function) via the Admin SDK, which bypasses these rules.
+    // A signed-in user can no longer edit their own balance from the browser.
     match /wallets/{userId} {
       allow read: if isSignedIn() && isOwner(userId);
-      allow write: if isSignedIn() && isOwner(userId);
+      allow write: if false;
 
       match /transactions/{transactionId} {
         allow read: if isSignedIn() && isOwner(userId);
-        allow write: if isSignedIn() && isOwner(userId);
+        allow write: if false;
       }
+    }
+
+    // --- Deals (Escrow) ---
+    // A client may CREATE a deal in 'pending_payment' status (before paying).
+    // Every other status change (in_escrow, released, refunded, disputed) is
+    // written only by Cloud Functions once a real payment event is confirmed.
+    match /deals/{dealId} {
+      allow read: if isSignedIn() &&
+        (request.auth.uid == resource.data.clientId || request.auth.uid == resource.data.freelancerId);
+      allow create: if isSignedIn() &&
+        request.auth.uid == request.resource.data.clientId &&
+        request.resource.data.status == 'pending_payment';
+      allow update: if false;
+      allow delete: if false;
     }
   }
 }
