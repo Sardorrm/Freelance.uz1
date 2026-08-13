@@ -1,0 +1,6 @@
+{
+  "name": "Freelance.uz",
+  "description": "Professional Oʻzbekiston freelans platformasi. Freelance.uz portalining 3 xil tildagi (UZ, RU, EN) professional interfeysi.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

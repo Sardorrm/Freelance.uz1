@@ -1,0 +1,254 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Represents an authenticated user on Freelance.uz",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "The Firebase Auth UID of the user"
+        },
+        "name": {
+          "type": "string",
+          "description": "The user's full name"
+        },
+        "email": {
+          "type": "string",
+          "description": "The user's email address"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["client", "freelancer", "admin"],
+          "description": "The user's role on the platform"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The timestamp when the profile was created"
+        }
+      },
+      "required": ["uid", "name", "email", "role"]
+    },
+    "Job": {
+      "title": "Job",
+      "description": "A freelance project posting on Freelance.uz",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        },
+        "budget": {
+          "type": "number"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "duration": {
+          "type": "string"
+        },
+        "skills": {
+          "type": "array"
+        },
+        "clientName": {
+          "type": "string"
+        },
+        "clientEmail": {
+          "type": "string"
+        },
+        "clientRating": {
+          "type": "number"
+        },
+        "location": {
+          "type": "string"
+        },
+        "datePosted": {
+          "type": "string"
+        },
+        "proposalsCount": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["id", "title", "description", "category", "budget", "currency", "type", "clientName", "clientEmail"]
+    },
+    "Freelancer": {
+      "title": "Freelancer",
+      "description": "A freelancer's detailed public profile",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "avatar": {
+          "type": "string"
+        },
+        "coverImage": {
+          "type": "string"
+        },
+        "rating": {
+          "type": "number"
+        },
+        "reviewsCount": {
+          "type": "number"
+        },
+        "hourlyRate": {
+          "type": "number"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        },
+        "skills": {
+          "type": "array"
+        },
+        "bio": {
+          "type": "string"
+        },
+        "location": {
+          "type": "string"
+        },
+        "verified": {
+          "type": "boolean"
+        },
+        "completedJobs": {
+          "type": "number"
+        }
+      },
+      "required": ["id", "name", "title", "category", "hourlyRate"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "An individual chat message in a discussion",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "senderId": {
+          "type": "string"
+        },
+        "senderName": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["id", "senderId", "senderName", "text"]
+    },
+    "Wallet": {
+      "title": "Wallet",
+      "description": "User's platform earnings and balance status",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "balanceUZS": {
+          "type": "number"
+        },
+        "totalEscrowActiveSum": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["userId", "balanceUZS", "totalEscrowActiveSum"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Earnings and payout records",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "amount": {
+          "type": "number"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "desc": {
+          "type": "string"
+        },
+        "date": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["id", "userId", "type", "amount", "currency", "desc", "date", "status"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "Basic user account profiles"
+    },
+    "jobs/{jobId}": {
+      "schema": "Job",
+      "description": "Available project postings on the market"
+    },
+    "freelancers/{freelancerId}": {
+      "schema": "Freelancer",
+      "description": "Freelancer public resumes and listings"
+    },
+    "chats/{chatId}/messages/{messageId}": {
+      "schema": "ChatMessage",
+      "description": "Messages belonging to specific multi-party or direct freelance chats"
+    },
+    "wallets/{userId}": {
+      "schema": "Wallet",
+      "description": "Keep track of platform income and escrow locks"
+    },
+    "wallets/{userId}/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Historic withdrawal or credit ledger entries"
+    }
+  }
+}
