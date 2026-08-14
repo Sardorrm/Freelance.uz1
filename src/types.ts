@@ -1,5 +1,34 @@
 export type Language = 'uz' | 'ru' | 'en';
 
+// --- Escrow / Deals ---
+// A Deal represents one client paying one freelancer for one job through
+// the platform's escrow flow. Client creates it (pending_payment); every
+// later status change is written only by a Cloud Function once Payme
+// confirms the payment (see /functions).
+export type DealStatus =
+  | 'pending_payment' // client created it, hasn't paid yet
+  | 'in_escrow'        // Payme confirmed payment, funds held by the platform
+  | 'released'         // funds released to the freelancer's wallet
+  | 'refunded'          // funds returned to the client
+  | 'disputed';         // flagged for manual admin review
+
+export interface Deal {
+  id: string;
+  jobId: string;
+  jobTitle: string;
+  clientId: string;
+  clientName: string;
+  freelancerId: string;
+  freelancerName: string;
+  amount: number;
+  currency: 'UZS';
+  status: DealStatus;
+  paymentProvider: 'payme';
+  providerTransactionId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type JobType = 'fixed' | 'hourly';
 
 export type JobCategory = 'development' | 'design' | 'marketing' | 'translation' | 'video' | 'other';
