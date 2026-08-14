@@ -370,7 +370,7 @@ export default function App() {
             🔒 {currentLang === 'uz' 
                  ? 'SSL 256-bit xavfsizlik protokoli faol' 
                  : currentLang === 'ru' 
-                   ? 'SSL 256-битный протокол безопасности активен' 
+                   ? 'SSL 256-битный протокол безопасности активен'
                    : 'SSL 256-bit security protocol active'}
           </div>
         </div>
