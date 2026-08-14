@@ -17,7 +17,9 @@ import PaymentTermsModal from './components/PaymentTermsModal';
 import { Briefcase, Users, PlusCircle, CheckCircle, Globe, Award, Sparkles, BookOpen } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { getJobs, postJob, getFreelancers, updateFreelancerProfile } from './services/db';
-import { testConnection } from './firebase';
+import { testConnection, auth, db } from './firebase';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 
 export default function App() {
   // Localization state (defaults to Uzbek 'uz' as requested by Uzbek prompt)
@@ -42,11 +44,10 @@ export default function App() {
   // Focused freelancer profile identifier
   const [selectedFreelancerId, setSelectedFreelancerId] = useState<string | null>(null);
 
-  // Authenticated user session mock
-  const [userSession, setUserSession] = useState<{ name: string; email: string } | null>({
-    name: "Sardorbek Ramanov",
-    email: "ramanovsardor8@gmail.com"
-  });
+  // Authenticated user session — now backed by real Firebase Authentication.
+  // Starts as `null` (signed out) until onAuthStateChanged fires below.
+  const [userSession, setUserSession] = useState<{ uid: string; name: string; email: string } | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
 
   // Authentication Dialog overlay state
   const [authModal, setAuthModal] = useState<{ isOpen: boolean; mode: 'login' | 'register' }>({
@@ -72,6 +73,32 @@ export default function App() {
 
     testConnection();
 
+    // Listen for real Firebase Auth state (persists across reloads).
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (!firebaseUser) {
+        setUserSession(null);
+        setAuthChecked(true);
+        return;
+      }
+      try {
+        const profileSnap = await getDoc(doc(db, 'users', firebaseUser.uid));
+        const profileName = profileSnap.exists() ? profileSnap.data().name : (firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User');
+        setUserSession({
+          uid: firebaseUser.uid,
+          name: profileName,
+          email: firebaseUser.email || ''
+        });
+      } catch (err) {
+        console.error('Failed to load user profile:', err);
+        setUserSession({
+          uid: firebaseUser.uid,
+          name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
+          email: firebaseUser.email || ''
+        });
+      }
+      setAuthChecked(true);
+    });
+
     // Fetch initial database items dynamically from Firestore
     async function loadFirebaseData() {
       try {
@@ -89,6 +116,8 @@ export default function App() {
       }
     }
     loadFirebaseData();
+
+    return () => unsubscribe();
   }, []);
 
   // Handle adding new job locally and persisting to Firestore
@@ -136,7 +165,7 @@ export default function App() {
         }}
         onOpenAuth={(mode) => setAuthModal({ isOpen: true, mode })}
         userSession={userSession}
-        onLogout={() => setUserSession(null)}
+        onLogout={() => signOut(auth)}
         selectedCurrency={selectedCurrency}
         onCurrencyChange={setSelectedCurrency}
       />
