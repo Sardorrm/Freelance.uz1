@@ -1,16 +1,60 @@
 import React, { useState } from 'react';
 import { Language, LanguageStrings } from '../types';
 import { TRANSLATIONS } from '../data/translations';
-import { X, Lock, Mail, User, ShieldCheck } from 'lucide-react';
+import { X, Lock, Mail, User, ShieldCheck, AlertCircle, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  updateProfile,
+  AuthError,
+} from 'firebase/auth';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { auth, db } from '../firebase';
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   mode: 'login' | 'register';
   currentLang: Language;
-  onSuccess: (session: { name: string; email: string }) => void;
+  onSuccess: (session: { uid: string; name: string; email: string }) => void;
 }
+
+// Small localized error-message map. Kept local to this component so we
+// don't have to widen the global LanguageStrings contract for every
+// possible Firebase Auth error code.
+const AUTH_ERRORS: Record<Language, Record<string, string>> = {
+  uz: {
+    'auth/email-already-in-use': "Bu email allaqachon roʻyxatdan oʻtgan. Kirish (Login) qiling.",
+    'auth/invalid-email': "Email manzili notoʻgʻri.",
+    'auth/weak-password': "Parol juda kalta. Kamida 6 ta belgi kiriting.",
+    'auth/wrong-password': "Parol notoʻgʻri.",
+    'auth/user-not-found': "Bunday foydalanuvchi topilmadi. Roʻyxatdan oʻting.",
+    'auth/invalid-credential': "Email yoki parol notoʻgʻri.",
+    'auth/too-many-requests': "Juda koʻp urinish. Birozdan keyin qayta urinib koʻring.",
+    default: "Xatolik yuz berdi. Qaytadan urinib koʻring.",
+  },
+  ru: {
+    'auth/email-already-in-use': "Этот email уже зарегистрирован. Войдите в систему.",
+    'auth/invalid-email': "Неверный адрес электронной почты.",
+    'auth/weak-password': "Пароль слишком короткий. Минимум 6 символов.",
+    'auth/wrong-password': "Неверный пароль.",
+    'auth/user-not-found': "Пользователь не найден. Зарегистрируйтесь.",
+    'auth/invalid-credential': "Неверный email или пароль.",
+    'auth/too-many-requests': "Слишком много попыток. Попробуйте позже.",
+    default: "Произошла ошибка. Попробуйте снова.",
+  },
+  en: {
+    'auth/email-already-in-use': "This email is already registered. Please log in instead.",
+    'auth/invalid-email': "That email address looks invalid.",
+    'auth/weak-password': "Password is too short. Use at least 6 characters.",
+    'auth/wrong-password': "Incorrect password.",
+    'auth/user-not-found': "No account found with that email. Please register.",
+    'auth/invalid-credential': "Incorrect email or password.",
+    'auth/too-many-requests': "Too many attempts. Please try again shortly.",
+    default: "Something went wrong. Please try again.",
+  },
+};
 
 export default function AuthModal({ isOpen, onClose, mode, currentLang, onSuccess }: AuthModalProps) {
   const strings: LanguageStrings = TRANSLATIONS[currentLang];
@@ -18,26 +62,70 @@ export default function AuthModal({ isOpen, onClose, mode, currentLang, onSucces
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [success, setSuccess] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const resetFields = () => {
+    setEmail('');
+    setPassword('');
+    setFullName('');
+  };
+
+  const localizeError = (err: unknown): string => {
+    const code = (err as AuthError)?.code || 'default';
+    const table = AUTH_ERRORS[currentLang];
+    return table[code] || table.default;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password || (mode === 'register' && !fullName)) {
       return;
     }
-    
-    // Simulating authentication successfully
-    setSuccess(true);
-    setTimeout(() => {
-      onSuccess({
-        name: mode === 'register' ? fullName : email.split('@')[0],
-        email: email
-      });
-      setSuccess(false);
-      setEmail('');
-      setPassword('');
-      setFullName('');
-      onClose();
-    }, 1500);
+    setErrorMsg(null);
+    setSubmitting(true);
+
+    try {
+      if (mode === 'register') {
+        const cred = await createUserWithEmailAndPassword(auth, email, password);
+        await updateProfile(cred.user, { displayName: fullName });
+
+        // Create the public user profile document. This matches the
+        // firestore.rules requirement that incoming().uid === userId.
+        await setDoc(doc(db, 'users', cred.user.uid), {
+          uid: cred.user.uid,
+          name: fullName,
+          email,
+          role: 'client',
+          createdAt: serverTimestamp(),
+        });
+
+        setSuccess(true);
+        setTimeout(() => {
+          onSuccess({ uid: cred.user.uid, name: fullName, email });
+          setSuccess(false);
+          resetFields();
+          onClose();
+        }, 1200);
+      } else {
+        const cred = await signInWithEmailAndPassword(auth, email, password);
+        setSuccess(true);
+        setTimeout(() => {
+          onSuccess({
+            uid: cred.user.uid,
+            name: cred.user.displayName || email.split('@')[0],
+            email: cred.user.email || email,
+          });
+          setSuccess(false);
+          resetFields();
+          onClose();
+        }, 1000);
+      }
+    } catch (err) {
+      setErrorMsg(localizeError(err));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -46,7 +134,7 @@ export default function AuthModal({ isOpen, onClose, mode, currentLang, onSucces
     <AnimatePresence>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
         {/* Backdrop overlay */}
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -62,7 +150,7 @@ export default function AuthModal({ isOpen, onClose, mode, currentLang, onSucces
           className="relative bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 md:p-8 shadow-2xl w-full max-w-md z-10 overflow-hidden"
         >
           {/* Top close button */}
-          <button 
+          <button
             onClick={onClose}
             className="absolute right-4 top-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
           >
@@ -70,7 +158,7 @@ export default function AuthModal({ isOpen, onClose, mode, currentLang, onSucces
           </button>
 
           {success ? (
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               className="text-center py-10"
@@ -96,13 +184,20 @@ export default function AuthModal({ isOpen, onClose, mode, currentLang, onSucces
                 </p>
               </div>
 
+              {errorMsg && (
+                <div className="flex items-start gap-2 bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-900/50 text-red-600 dark:text-red-400 text-xs font-medium rounded-xl px-3 py-2.5">
+                  <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <span>{errorMsg}</span>
+                </div>
+              )}
+
               {mode === 'register' && (
                 <div>
                   <label className="block text-xs font-mono font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1">
                     {strings.fullName}
                   </label>
                   <div className="relative">
-                    <input 
+                    <input
                       type="text"
                       required
                       value={fullName}
@@ -120,7 +215,7 @@ export default function AuthModal({ isOpen, onClose, mode, currentLang, onSucces
                   {strings.email}
                 </label>
                 <div className="relative">
-                  <input 
+                  <input
                     type="email"
                     required
                     value={email}
@@ -137,7 +232,7 @@ export default function AuthModal({ isOpen, onClose, mode, currentLang, onSucces
                   {strings.password}
                 </label>
                 <div className="relative">
-                  <input 
+                  <input
                     type="password"
                     required
                     minLength={6}
@@ -152,8 +247,10 @@ export default function AuthModal({ isOpen, onClose, mode, currentLang, onSucces
 
               <button
                 type="submit"
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-xl text-xs shadow-md shadow-indigo-150 transition-colors mt-2"
+                disabled={submitting}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-xl text-xs shadow-md shadow-indigo-150 transition-colors mt-2 flex items-center justify-center gap-2"
               >
+                {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 {mode === 'login' ? strings.login : strings.register}
               </button>
 
