@@ -10,8 +10,16 @@ import {
   updateProfile,
   AuthError,
 } from 'firebase/auth';
-import { doc, setDoc, getDocs, collection, query, where, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../firebase';
+
+// SECURITY NOTE: This component intentionally never stores a password
+// anywhere except by handing it directly to Firebase Auth
+// (createUserWithEmailAndPassword / signInWithEmailAndPassword). Firebase
+// hashes and verifies it server-side. Never write `password` into
+// Firestore or localStorage -- Firestore's `users` collection is readable
+// by any signed-in user (see firestore.rules), so a plaintext password
+// field there would leak every user's password to every other user.
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -21,27 +29,26 @@ interface AuthModalProps {
   onSuccess: (session: { uid: string; name: string; email: string }) => void;
 }
 
-// Localized error messages
 const AUTH_ERRORS: Record<Language, Record<string, string>> = {
   uz: {
-    'auth/email-already-in-use': "Bu email allaqachon roʻyxatdan oʻtgan. Kirish (Login) qiling.",
-    'auth/invalid-email': "Email manzili notoʻgʻri shaklda kiritildi.",
-    'auth/weak-password': "Parol kamida 6 ta belgidan iborat boʻlishi kerak.",
-    'auth/wrong-password': "Parol notoʻgʻri kiritildi.",
-    'auth/user-not-found': "Bunday email topilmadi. Iltimos, roʻyxatdan oʻting.",
-    'auth/invalid-credential': "Email yoki parol notoʻgʻri.",
-    'auth/too-many-requests': "Juda koʻp urinish. Birozdan keyin qayta urinib koʻring.",
-    default: "Xatolik yuz berdi. Qaytadan urinib koʻring.",
+    'auth/email-already-in-use': "Bu email allaqachon ro\u02bbyxatdan o\u02bbtgan. Kirish (Login) qiling.",
+    'auth/invalid-email': "Email manzili noto\u02bbg\u02bbri shaklda kiritildi.",
+    'auth/weak-password': "Parol kamida 6 ta belgidan iborat bo\u02bblishi kerak.",
+    'auth/wrong-password': "Parol noto\u02bbg\u02bbri kiritildi.",
+    'auth/user-not-found': "Bunday email topilmadi. Iltimos, ro\u02bbyxatdan o\u02bbting.",
+    'auth/invalid-credential': "Email yoki parol noto\u02bbg\u02bbri.",
+    'auth/too-many-requests': "Juda ko\u02bbp urinish. Birozdan keyin qayta urinib ko\u02bbring.",
+    default: "Xatolik yuz berdi. Qaytadan urinib ko\u02bbring.",
   },
   ru: {
-    'auth/email-already-in-use': "Этот email уже зарегистрирован. Войдите в систему.",
-    'auth/invalid-email': "Неверный адрес электронной почты.",
-    'auth/weak-password': "Пароль слишком короткий. Минимум 6 символов.",
-    'auth/wrong-password': "Неверный пароль.",
-    'auth/user-not-found': "Пользователь не найден. Зарегистрируйтесь.",
-    'auth/invalid-credential': "Неверный email или пароль.",
-    'auth/too-many-requests': "Слишком много попыток. Попробуйте позже.",
-    default: "Произошла ошибка. Попробуйте снова.",
+    'auth/email-already-in-use': "\u042d\u0442\u043e\u0442 email \u0443\u0436\u0435 \u0437\u0430\u0440\u0435\u0433\u0438\u0441\u0442\u0440\u0438\u0440\u043e\u0432\u0430\u043d. \u0412\u043e\u0439\u0434\u0438\u0442\u0435 \u0432 \u0441\u0438\u0441\u0442\u0435\u043c\u0443.",
+    'auth/invalid-email': "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0439 \u0430\u0434\u0440\u0435\u0441 \u044d\u043b\u0435\u043a\u0442\u0440\u043e\u043d\u043d\u043e\u0439 \u043f\u043e\u0447\u0442\u044b.",
+    'auth/weak-password': "\u041f\u0430\u0440\u043e\u043b\u044c \u0441\u043b\u0438\u0448\u043a\u043e\u043c \u043a\u043e\u0440\u043e\u0442\u043a\u0438\u0439. \u041c\u0438\u043d\u0438\u043c\u0443\u043c 6 \u0441\u0438\u043c\u0432\u043e\u043b\u043e\u0432.",
+    'auth/wrong-password': "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0439 \u043f\u0430\u0440\u043e\u043b\u044c.",
+    'auth/user-not-found': "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d. \u0417\u0430\u0440\u0435\u0433\u0438\u0441\u0442\u0440\u0438\u0440\u0443\u0439\u0442\u0435\u0441\u044c.",
+    'auth/invalid-credential': "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0439 email \u0438\u043b\u0438 \u043f\u0430\u0440\u043e\u043b\u044c.",
+    'auth/too-many-requests': "\u0421\u043b\u0438\u0448\u043a\u043e\u043c \u043c\u043d\u043e\u0433\u043e \u043f\u043e\u043f\u044b\u0442\u043e\u043a. \u041f\u043e\u043f\u0440\u043e\u0431\u0443\u0439\u0442\u0435 \u043f\u043e\u0437\u0436\u0435.",
+    default: "\u041f\u0440\u043e\u0438\u0437\u043e\u0448\u043b\u0430 \u043e\u0448\u0438\u0431\u043a\u0430. \u041f\u043e\u043f\u0440\u043e\u0431\u0443\u0439\u0442\u0435 \u0441\u043d\u043e\u0432\u0430.",
   },
   en: {
     'auth/email-already-in-use': "This email is already registered. Please log in instead.",
@@ -67,20 +74,20 @@ const RESET_TEXTS: Record<Language, {
   uz: {
     forgotPasswordLink: "Parolni unutdingizmi?",
     resetTitle: "Parolni qayta tiklash",
-    resetSubtitle: "Elektron pochtangizni kiriting va biz yangi parol oʻrnatish havolasini yuboramiz.",
+    resetSubtitle: "Elektron pochtangizni kiriting va biz yangi parol o\u02bbrnatish havolasini yuboramiz.",
     sendResetBtn: "Tiklash havolasini yuborish",
     backToLogin: "Kirish sahifasiga qaytish",
     resetSuccess: "Havola yuborildi!",
-    resetSuccessDesc: "Parolni tiklash havolasi pochtangizga yuborildi. Iltimos, pochtangizni (va Spam papkasini) tekshiring.",
+    resetSuccessDesc: "Agar bu email ro\u02bbyxatdan o\u02bbtgan bo\u02bblsa, tiklash havolasi yuborildi. Pochtangizni (va Spam papkasini) tekshiring.",
   },
   ru: {
-    forgotPasswordLink: "Забыли пароль?",
-    resetTitle: "Сброс пароля",
-    resetSubtitle: "Введите ваш email, и мы отправим ссылку для создания нового пароля.",
-    sendResetBtn: "Отправить ссылку",
-    backToLogin: "Вернуться ко входу",
-    resetSuccess: "Ссылка отправлена!",
-    resetSuccessDesc: "Ссылка для сброса пароля отправлена на ваш email. Проверьте входящие и папку Спам.",
+    forgotPasswordLink: "\u0417\u0430\u0431\u044b\u043b\u0438 \u043f\u0430\u0440\u043e\u043b\u044c?",
+    resetTitle: "\u0421\u0431\u0440\u043e\u0441 \u043f\u0430\u0440\u043e\u043b\u044f",
+    resetSubtitle: "\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u0432\u0430\u0448 email, \u0438 \u043c\u044b \u043e\u0442\u043f\u0440\u0430\u0432\u0438\u043c \u0441\u0441\u044b\u043b\u043a\u0443 \u0434\u043b\u044f \u0441\u043e\u0437\u0434\u0430\u043d\u0438\u044f \u043d\u043e\u0432\u043e\u0433\u043e \u043f\u0430\u0440\u043e\u043b\u044f.",
+    sendResetBtn: "\u041e\u0442\u043f\u0440\u0430\u0432\u0438\u0442\u044c \u0441\u0441\u044b\u043b\u043a\u0443",
+    backToLogin: "\u0412\u0435\u0440\u043d\u0443\u0442\u044c\u0441\u044f \u043a\u043e \u0432\u0445\u043e\u0434\u0443",
+    resetSuccess: "\u0421\u0441\u044b\u043b\u043a\u0430 \u043e\u0442\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0430!",
+    resetSuccessDesc: "\u0415\u0441\u043b\u0438 \u044d\u0442\u043e\u0442 email \u0437\u0430\u0440\u0435\u0433\u0438\u0441\u0442\u0440\u0438\u0440\u043e\u0432\u0430\u043d, \u0441\u0441\u044b\u043b\u043a\u0430 \u0434\u043b\u044f \u0441\u0431\u0440\u043e\u0441\u0430 \u043f\u0430\u0440\u043e\u043b\u044f \u043e\u0442\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0430. \u041f\u0440\u043e\u0432\u0435\u0440\u044c\u0442\u0435 \u0432\u0445\u043e\u0434\u044f\u0449\u0438\u0435 \u0438 \u043f\u0430\u043f\u043a\u0443 \u0421\u043f\u0430\u043c.",
   },
   en: {
     forgotPasswordLink: "Forgot password?",
@@ -89,38 +96,9 @@ const RESET_TEXTS: Record<Language, {
     sendResetBtn: "Send Reset Link",
     backToLogin: "Back to login",
     resetSuccess: "Link Sent!",
-    resetSuccessDesc: "Password reset link has been sent to your email. Please check your inbox and spam folder.",
+    resetSuccessDesc: "If that email is registered, a reset link was sent. Please check your inbox and spam folder.",
   },
 };
-
-// Helper for persistent client-side user accounts store
-interface StoredUser {
-  uid: string;
-  name: string;
-  email: string;
-  password?: string;
-  createdAt: number;
-}
-
-function getStoredUsers(): Record<string, StoredUser> {
-  try {
-    const raw = localStorage.getItem('freelance_uz_users_db');
-    if (raw) return JSON.parse(raw);
-  } catch (e) {
-    console.warn(e);
-  }
-  return {};
-}
-
-function saveStoredUser(user: StoredUser) {
-  try {
-    const users = getStoredUsers();
-    users[user.email.toLowerCase()] = user;
-    localStorage.setItem('freelance_uz_users_db', JSON.stringify(users));
-  } catch (e) {
-    console.warn(e);
-  }
-}
 
 export default function AuthModal({ isOpen, onClose, mode: initialMode, currentLang, onSuccess }: AuthModalProps) {
   const strings: LanguageStrings = TRANSLATIONS[currentLang];
@@ -161,19 +139,15 @@ export default function AuthModal({ isOpen, onClose, mode: initialMode, currentL
 
   const localizeError = (err: unknown): string => {
     console.error('Firebase Auth Error:', err);
-    const authErr = err as AuthError;
-    const code = authErr?.code || 'default';
+    const code = (err as AuthError)?.code || 'default';
     const table = AUTH_ERRORS[currentLang] || AUTH_ERRORS.uz;
-
-    if (table[code]) {
-      return table[code];
-    }
+    if (table[code]) return table[code];
     if (code === 'auth/network-request-failed') {
       return currentLang === 'uz'
         ? "Internet bilan aloqa uzildi. Tarmoqni tekshiring."
         : "Network connection failed. Check your connection.";
     }
-    return authErr?.message || table.default;
+    return (err as AuthError)?.message || table.default;
   };
 
   const handleResetPassword = async (e: React.FormEvent) => {
@@ -184,14 +158,15 @@ export default function AuthModal({ isOpen, onClose, mode: initialMode, currentL
     setErrorMsg(null);
     setSubmitting(true);
     try {
-      try {
-        await sendPasswordResetEmail(auth, cleanEmail);
-      } catch (authErr) {
-        console.warn('Firebase reset email note:', authErr);
-      }
+      await sendPasswordResetEmail(auth, cleanEmail);
       setResetSent(true);
     } catch (err) {
-      setErrorMsg(localizeError(err));
+      const code = (err as AuthError)?.code;
+      if (code === 'auth/user-not-found') {
+        setResetSent(true);
+      } else {
+        setErrorMsg(localizeError(err));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -203,11 +178,11 @@ export default function AuthModal({ isOpen, onClose, mode: initialMode, currentL
     const cleanName = fullName.trim();
 
     if (!cleanEmail || !password || (activeMode === 'register' && !cleanName)) {
-      setErrorMsg(currentLang === 'uz' ? "Barcha maydonlarni toʻldiring." : "Please fill in all fields.");
+      setErrorMsg(currentLang === 'uz' ? "Barcha maydonlarni to\u02bbldiring." : "Please fill in all fields.");
       return;
     }
-    if (password.length < 6) {
-      setErrorMsg(AUTH_ERRORS[currentLang]?.['auth/weak-password'] || "Parol kamida 6 ta belgidan iborat boʻlishi kerak.");
+    if (activeMode === 'register' && password.length < 6) {
+      setErrorMsg(AUTH_ERRORS[currentLang]?.['auth/weak-password']);
       return;
     }
 
@@ -215,182 +190,45 @@ export default function AuthModal({ isOpen, onClose, mode: initialMode, currentL
     setSubmitting(true);
 
     try {
+      let session: { uid: string; name: string; email: string };
+
       if (activeMode === 'register') {
-        // Check if user is already registered in local storage
-        const storedUsers = getStoredUsers();
-        if (storedUsers[cleanEmail]) {
-          setErrorMsg(
-            currentLang === 'uz'
-              ? "Bu email allaqachon roʻyxatdan oʻtgan. Iltimos, Kirish boʻlimiga oʻting."
-              : "This email is already registered. Please log in."
-          );
-          setSubmitting(false);
-          return;
+        const cred = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+        try {
+          await updateProfile(cred.user, { displayName: cleanName });
+        } catch (pErr) {
+          console.warn('DisplayName update note:', pErr);
         }
 
-        let uid = `user_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-        
-        // 1. Try Firebase Auth
         try {
-          const cred = await createUserWithEmailAndPassword(auth, cleanEmail, password);
-          uid = cred.user.uid;
-          try {
-            await updateProfile(cred.user, { displayName: cleanName });
-          } catch (pErr) {
-            console.warn('DisplayName update note:', pErr);
-          }
-        } catch (fbErr) {
-          const code = (fbErr as AuthError)?.code;
-          if (code === 'auth/email-already-in-use') {
-            setErrorMsg(
-              currentLang === 'uz'
-                ? "Bu email allaqachon roʻyxatdan oʻtgan. Iltimos, Kirish boʻlimiga oʻting."
-                : "This email is already registered. Please log in."
-            );
-            setSubmitting(false);
-            return;
-          }
-        }
-
-        // Save to Firestore users collection
-        try {
-          await setDoc(doc(db, 'users', uid), {
-            uid,
+          await setDoc(doc(db, 'users', cred.user.uid), {
+            uid: cred.user.uid,
             name: cleanName,
             email: cleanEmail,
-            password,
             role: 'client',
             createdAt: serverTimestamp(),
           });
         } catch (dbErr) {
-          console.warn('Firestore doc write note:', dbErr);
+          console.warn('Firestore profile write note:', dbErr);
         }
 
-        // Save to persistent user store
-        saveStoredUser({
-          uid,
-          name: cleanName,
-          email: cleanEmail,
-          password,
-          createdAt: Date.now(),
-        });
-
-        const session = { uid, name: cleanName, email: cleanEmail };
-        localStorage.setItem('freelance_uz_session', JSON.stringify(session));
-
-        setSuccess(true);
-        setTimeout(() => {
-          onSuccess(session);
-          setSuccess(false);
-          resetFields();
-          onClose();
-        }, 800);
-
+        session = { uid: cred.user.uid, name: cleanName, email: cleanEmail };
       } else {
-        // STRICT LOGIN MODE - User MUST be registered and password MUST match
-        let foundUser: { uid: string; name: string; email: string } | null = null;
-
-        // Check 1: Check in local database
-        const storedUsers = getStoredUsers();
-        const localUser = storedUsers[cleanEmail];
-
-        if (localUser) {
-          if (!localUser.password || localUser.password !== password) {
-            setErrorMsg(
-              currentLang === 'uz'
-                ? "Parol notoʻgʻri kiritildi. Qaytadan tekshirib yozing."
-                : "Incorrect password. Please check and try again."
-            );
-            setSubmitting(false);
-            return;
-          }
-          foundUser = {
-            uid: localUser.uid,
-            name: localUser.name,
-            email: localUser.email,
-          };
-        }
-
-        // Check 2: Check in Firestore users collection
-        if (!foundUser) {
-          try {
-            const q = query(collection(db, 'users'), where('email', '==', cleanEmail));
-            const snap = await getDocs(q);
-            if (!snap.empty) {
-              const userData = snap.docs[0].data();
-              if (!userData.password || userData.password !== password) {
-                setErrorMsg(
-                  currentLang === 'uz'
-                    ? "Parol notoʻgʻri kiritildi. Qaytadan tekshirib yozing."
-                    : "Incorrect password. Please check and try again."
-                );
-                setSubmitting(false);
-                return;
-              }
-              foundUser = {
-                uid: userData.uid || snap.docs[0].id,
-                name: userData.name || cleanEmail.split('@')[0],
-                email: userData.email || cleanEmail,
-              };
-              // Cache locally with password
-              saveStoredUser({
-                uid: foundUser.uid,
-                name: foundUser.name,
-                email: foundUser.email,
-                password: userData.password,
-                createdAt: Date.now(),
-              });
-            }
-          } catch (fsErr) {
-            console.warn('Firestore lookup warning:', fsErr);
-          }
-        }
-
-        // Check 3: Check in Firebase Auth
-        if (!foundUser) {
-          try {
-            const cred = await signInWithEmailAndPassword(auth, cleanEmail, password);
-            foundUser = {
-              uid: cred.user.uid,
-              name: cred.user.displayName || cleanEmail.split('@')[0],
-              email: cred.user.email || cleanEmail,
-            };
-          } catch (fbErr) {
-            const code = (fbErr as AuthError)?.code;
-            if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
-              setErrorMsg(
-                currentLang === 'uz'
-                  ? "Parol notoʻgʻri kiritildi. Qaytadan tekshirib yozing."
-                  : "Incorrect password. Please check and try again."
-              );
-              setSubmitting(false);
-              return;
-            }
-          }
-        }
-
-        // STRICT REJECTION: If account does not exist anywhere, DO NOT log in!
-        if (!foundUser) {
-          setErrorMsg(
-            currentLang === 'uz'
-              ? "Bunday hisob topilmadi. Iltimos, avval 'Roʻyxatdan oʻtish' boʻlimidan roʻyxatdan oʻting."
-              : "No registered account found with this email. Please register first."
-          );
-          setSubmitting(false);
-          return;
-        }
-
-        const session = { uid: foundUser.uid, name: foundUser.name, email: cleanEmail };
-        localStorage.setItem('freelance_uz_session', JSON.stringify(session));
-
-        setSuccess(true);
-        setTimeout(() => {
-          onSuccess(session);
-          setSuccess(false);
-          resetFields();
-          onClose();
-        }, 800);
+        const cred = await signInWithEmailAndPassword(auth, cleanEmail, password);
+        session = {
+          uid: cred.user.uid,
+          name: cred.user.displayName || cleanEmail.split('@')[0],
+          email: cred.user.email || cleanEmail,
+        };
       }
+
+      setSuccess(true);
+      setTimeout(() => {
+        onSuccess(session);
+        setSuccess(false);
+        resetFields();
+        onClose();
+      }, 800);
     } catch (err) {
       setErrorMsg(localizeError(err));
     } finally {
@@ -403,7 +241,6 @@ export default function AuthModal({ isOpen, onClose, mode: initialMode, currentL
   return (
     <AnimatePresence>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        {/* Backdrop overlay */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -412,14 +249,12 @@ export default function AuthModal({ isOpen, onClose, mode: initialMode, currentL
           className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm"
         />
 
-        {/* Modal body */}
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 15 }}
           className="relative bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 md:p-8 shadow-2xl w-full max-w-md z-10 overflow-hidden"
         >
-          {/* Top close button */}
           <button
             onClick={handleClose}
             className="absolute right-4 top-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
@@ -444,7 +279,6 @@ export default function AuthModal({ isOpen, onClose, mode: initialMode, currentL
               </p>
             </motion.div>
           ) : isForgotMode ? (
-            /* Forgot Password Form */
             <div className="space-y-4">
               <div className="text-center pb-1">
                 <div className="w-12 h-12 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 rounded-2xl flex items-center justify-center mx-auto mb-3">
@@ -532,14 +366,10 @@ export default function AuthModal({ isOpen, onClose, mode: initialMode, currentL
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Tab selector between Kirish and Roʻyxatdan oʻtish */}
               <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl mb-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    setActiveMode('login');
-                    setErrorMsg(null);
-                  }}
+                  onClick={() => { setActiveMode('login'); setErrorMsg(null); }}
                   className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
                     activeMode === 'login'
                       ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm'
@@ -550,10 +380,7 @@ export default function AuthModal({ isOpen, onClose, mode: initialMode, currentL
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setActiveMode('register');
-                    setErrorMsg(null);
-                  }}
+                  onClick={() => { setActiveMode('register'); setErrorMsg(null); }}
                   className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
                     activeMode === 'register'
                       ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm'
@@ -615,10 +442,7 @@ export default function AuthModal({ isOpen, onClose, mode: initialMode, currentL
                   {activeMode === 'login' && (
                     <button
                       type="button"
-                      onClick={() => {
-                        setIsForgotMode(true);
-                        setErrorMsg(null);
-                      }}
+                      onClick={() => { setIsForgotMode(true); setErrorMsg(null); }}
                       className="text-3xs font-medium text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
                     >
                       {resetText.forgotPasswordLink}
@@ -629,7 +453,7 @@ export default function AuthModal({ isOpen, onClose, mode: initialMode, currentL
                   <input
                     type="password"
                     required
-                    minLength={6}
+                    minLength={activeMode === 'register' ? 6 : undefined}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Kamida 6 ta belgi"
@@ -658,5 +482,3 @@ export default function AuthModal({ isOpen, onClose, mode: initialMode, currentL
     </AnimatePresence>
   );
 }
-
-
