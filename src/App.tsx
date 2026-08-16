@@ -44,9 +44,16 @@ export default function App() {
   // Focused freelancer profile identifier
   const [selectedFreelancerId, setSelectedFreelancerId] = useState<string | null>(null);
 
-  // Authenticated user session — now backed by real Firebase Authentication.
-  // Starts as `null` (signed out) until onAuthStateChanged fires below.
-  const [userSession, setUserSession] = useState<{ uid: string; name: string; email: string } | null>(null);
+  // Authenticated user session — backed by Firebase and persistent storage
+  const [userSession, setUserSession] = useState<{ uid: string; name: string; email: string } | null>(() => {
+    try {
+      const saved = localStorage.getItem('freelance_uz_session');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.warn('Failed to parse saved session:', e);
+    }
+    return null;
+  });
   const [authChecked, setAuthChecked] = useState(false);
 
   // Authentication Dialog overlay state
@@ -76,25 +83,33 @@ export default function App() {
     // Listen for real Firebase Auth state (persists across reloads).
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (!firebaseUser) {
-        setUserSession(null);
+        // If not in Firebase Auth, check if we have persistent user session
+        const saved = localStorage.getItem('freelance_uz_session');
+        if (!saved) {
+          setUserSession(null);
+        }
         setAuthChecked(true);
         return;
       }
       try {
         const profileSnap = await getDoc(doc(db, 'users', firebaseUser.uid));
         const profileName = profileSnap.exists() ? profileSnap.data().name : (firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User');
-        setUserSession({
+        const session = {
           uid: firebaseUser.uid,
           name: profileName,
           email: firebaseUser.email || ''
-        });
+        };
+        setUserSession(session);
+        localStorage.setItem('freelance_uz_session', JSON.stringify(session));
       } catch (err) {
         console.error('Failed to load user profile:', err);
-        setUserSession({
+        const session = {
           uid: firebaseUser.uid,
           name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
           email: firebaseUser.email || ''
-        });
+        };
+        setUserSession(session);
+        localStorage.setItem('freelance_uz_session', JSON.stringify(session));
       }
       setAuthChecked(true);
     });
@@ -119,6 +134,16 @@ export default function App() {
 
     return () => unsubscribe();
   }, []);
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (err) {
+      console.warn('Signout warning:', err);
+    }
+    localStorage.removeItem('freelance_uz_session');
+    setUserSession(null);
+  };
 
   // Handle adding new job locally and persisting to Firestore
   const handlePostJobSubmit = async (newJob: Omit<Job, 'id' | 'datePosted' | 'proposalsCount'>) => {
@@ -165,7 +190,7 @@ export default function App() {
         }}
         onOpenAuth={(mode) => setAuthModal({ isOpen: true, mode })}
         userSession={userSession}
-        onLogout={() => signOut(auth)}
+        onLogout={handleLogout}
         selectedCurrency={selectedCurrency}
         onCurrencyChange={setSelectedCurrency}
       />
