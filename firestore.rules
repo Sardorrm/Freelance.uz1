@@ -17,10 +17,14 @@ service cloud.firestore {
     }
 
     // --- Users ---
+    // A password field is never allowed here under any circumstance --
+    // this collection is readable by any signed-in user, so storing a
+    // password here (plaintext or otherwise) would leak it to every other
+    // user. The real password only ever lives inside Firebase Auth.
     match /users/{userId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && isOwner(userId);
-      allow update: if isSignedIn() && isOwner(userId);
+      allow create: if isSignedIn() && isOwner(userId) && !('password' in request.resource.data);
+      allow update: if isSignedIn() && isOwner(userId) && !('password' in request.resource.data);
       allow delete: if false;
     }
 
