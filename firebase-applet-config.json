@@ -1,10 +1,10 @@
 {
-  "projectId": "psychic-pod-v3t6m",
-  "appId": "1:728119995278:web:3faa796a51f80671d752df",
-  "apiKey": "AIzaSyDGCBm52hOvtdnFWlwUEIe6zkLcb4H_QzY",
-  "authDomain": "psychic-pod-v3t6m.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-4b717152-0c1d-4989-b666-3b319f7148e0",
-  "storageBucket": "psychic-pod-v3t6m.firebasestorage.app",
-  "messagingSenderId": "728119995278",
-  "measurementId": ""
+  "projectId": "freelanceuz",
+  "appId": "1:148874448592:web:2121fd61d7d75b553bd8d5",
+  "apiKey": "AIzaSyAkRKoYR2KAhX2ovyY11bDQXyhij3nj5Gc",
+  "authDomain": "freelanceuz.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "freelanceuz.firebasestorage.app",
+  "messagingSenderId": "148874448592",
+  "measurementId": "G-BS16DDS962"
 }
