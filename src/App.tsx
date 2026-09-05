@@ -20,6 +20,8 @@ import { testConnection, auth, db } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, doc, getDoc, onSnapshot } from 'firebase/firestore';
 
+const ADMIN_EMAIL = 'ramanovsardor8@gmail.com';
+
 export default function App() {
   const [currentLang, setCurrentLang] = useState<Language>('uz');
   const strings = TRANSLATIONS[currentLang];
@@ -33,7 +35,7 @@ export default function App() {
   const [authModal, setAuthModal] = useState<{ isOpen: boolean; mode: 'login' | 'register' }>({ isOpen: false, mode: 'login' });
   const [postJobOpen, setPostJobOpen] = useState(false);
   const [paymentTermsOpen, setPaymentTermsOpen] = useState(false);
-  const isAdmin = userSession?.email.trim().toLowerCase() === 'ramanovsardor8@gmail.com';
+  const isAdmin = userSession?.email.trim().toLowerCase() === ADMIN_EMAIL;
 
   React.useEffect(() => {
     const savedTheme = localStorage.getItem('theme');
@@ -85,11 +87,72 @@ export default function App() {
     setUserSession(null);
   };
 
+  const handleOpenCabinet = async () => {
+    if (!userSession) {
+      setAuthModal({ isOpen: true, mode: 'login' });
+      return;
+    }
+
+    // Always resolve the cabinet by the authenticated Firebase UID.
+    const ownProfile = freelancersList.find(f => f.ownerId === userSession.uid);
+    if (ownProfile) {
+      setSelectedFreelancerId(ownProfile.id);
+      setActiveTab('profile');
+      return;
+    }
+
+    const newProfile: Freelancer = {
+      id: `user_${userSession.uid}`,
+      ownerId: userSession.uid,
+      name: userSession.name,
+      title: 'Freelancer',
+      avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(userSession.name)}&background=4f46e5&color=fff&size=512`,
+      rating: 0,
+      reviewsCount: 0,
+      hourlyRate: 0,
+      currency: 'UZS',
+      category: 'development',
+      skills: [],
+      bio: '',
+      location: 'Uzbekistan',
+      verified: false,
+      completedJobs: 0,
+      portfolio: [],
+      reviews: []
+    };
+
+    try {
+      await updateFreelancerProfile(newProfile);
+      setFreelancersList(prev => [...prev.filter(f => f.ownerId !== userSession.uid), newProfile]);
+    } catch (error) {
+      console.error('Failed to create personal cabinet:', error);
+      setFreelancersList(prev => prev.some(f => f.id === newProfile.id) ? prev : [...prev, newProfile]);
+    }
+    setSelectedFreelancerId(newProfile.id);
+    setActiveTab('profile');
+  };
+
   const handlePostJobSubmit = async (newJob: Omit<Job, 'id' | 'datePosted' | 'proposalsCount'>) => {
     if (!userSession) { setAuthModal({ isOpen: true, mode: 'login' }); throw new Error('AUTH_REQUIRED'); }
     const jobWithMeta: Job = { ...newJob, id: `j_${Date.now()}_${userSession.uid.slice(0, 8)}`, datePosted: 'just_now', proposalsCount: 0, clientId: userSession.uid, clientName: newJob.clientName || userSession.name };
     await postJob(jobWithMeta);
     setActiveTab('jobs');
+  };
+
+  const handleTabChange = (tab: 'home' | 'jobs' | 'freelancers' | 'post' | 'wallet' | 'profile' | 'chats' | 'settings') => {
+    if (tab === 'post') {
+      if (!userSession) { setAuthModal({ isOpen: true, mode: 'login' }); return; }
+      setPostJobOpen(true);
+      return;
+    }
+    if (tab === 'wallet') {
+      if (!isAdmin) { setActiveTab('home'); return; }
+    }
+    if (tab === 'profile') {
+      void handleOpenCabinet();
+      return;
+    }
+    setActiveTab(tab);
   };
 
   const home = <HomeDashboard currentLang={currentLang} jobs={jobs} freelancers={freelancersList} activeTab={activeTab} onTabChange={setActiveTab} onPostJobClick={() => userSession ? setPostJobOpen(true) : setAuthModal({ isOpen: true, mode: 'login' })} onSearchQuery={setSearchTerm} selectedCurrency={selectedCurrency} userSession={userSession} onSelectFreelancer={(id) => { setSelectedFreelancerId(id); setActiveTab('profile'); }} onOpenPaymentModal={() => setPaymentTermsOpen(true)} />;
@@ -101,16 +164,10 @@ export default function App() {
         <div className="absolute top-[38%] -left-40 w-[30rem] h-[30rem] rounded-full bg-emerald-400/[0.045] blur-[110px]" />
         <div className="absolute bottom-0 right-[15%] w-72 h-72 rounded-full bg-violet-400/[0.035] blur-[100px]" />
       </div>
-      <Header currentLang={currentLang} onLanguageChange={setCurrentLang} activeTab={activeTab} onTabChange={(tab) => { if (tab === 'post') { if (!userSession) { setAuthModal({ isOpen: true, mode: 'login' }); return; } setPostJobOpen(true); return; } if (tab === 'wallet') { if (!isAdmin) { setActiveTab('home'); return; } } if (tab === 'profile' && userSession) { const own = freelancersList.find(f => f.ownerId === userSession.uid); setSelectedFreelancerId(own?.id ?? null); } setActiveTab(tab); }} onOpenAuth={(mode) => setAuthModal({ isOpen: true, mode })} userSession={userSession} onLogout={handleLogout} selectedCurrency={selectedCurrency} onCurrencyChange={setSelectedCurrency} />
+      <Header currentLang={currentLang} onLanguageChange={setCurrentLang} activeTab={activeTab} onTabChange={handleTabChange} onOpenAuth={(mode) => setAuthModal({ isOpen: true, mode })} userSession={userSession} onLogout={handleLogout} selectedCurrency={selectedCurrency} onCurrencyChange={setSelectedCurrency} />
       <main className="flex-1 w-full relative py-8 sm:py-10 px-3 sm:px-6 lg:px-8 z-10">
-        {activeTab === 'home' && <section className="text-center max-w-5xl mx-auto mt-2 sm:mt-6 mb-10 sm:mb-12">
-          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-white/75 dark:bg-slate-900/75 border border-indigo-100/80 dark:border-indigo-900/50 rounded-full text-indigo-700 dark:text-indigo-300 text-[10px] font-bold tracking-[0.12em] uppercase shadow-sm backdrop-blur">
-            <Sparkles className="w-3.5 h-3.5" /><span>{currentLang === 'uz' ? 'Freelance.uz — OʻZBEKISTON MILLIY PLATFORMASI' : currentLang === 'ru' ? 'Freelance.uz — НАЦИОНАЛЬНАЯ ПЛАТФОРМА УЗБЕКИСТАНА' : 'Freelance.uz — NATIONAL FREELANCE MARKET OF UZBEKISTAN'}</span>
-          </motion.div>
-          <motion.h1 initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="mt-5 text-4xl sm:text-5xl md:text-6xl font-display font-extrabold tracking-[-0.045em] text-slate-950 dark:text-white leading-[0.98]">{strings.heroTitle}</motion.h1>
-          <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-5 text-sm sm:text-base text-slate-500 dark:text-slate-400 max-w-2xl mx-auto leading-7">{strings.heroSubtitle}</motion.p>
-        </section>}
-        <div className="mb-16 sm:mb-20 max-w-7xl mx-auto">{activeTab === 'home' ? home : activeTab === 'jobs' ? <JobList currentLang={currentLang} jobs={jobs} searchTerm={searchTerm} onSearchChange={setSearchTerm} selectedCurrency={selectedCurrency} /> : activeTab === 'freelancers' ? <FreelancerList currentLang={currentLang} searchTerm={searchTerm} onSearchChange={setSearchTerm} freelancers={freelancersList} onSelectFreelancer={(id) => { setSelectedFreelancerId(id); setActiveTab('profile'); }} selectedCurrency={selectedCurrency} /> : activeTab === 'profile' ? <ProfileView currentLang={currentLang} freelancer={freelancersList.find(f => f.id === selectedFreelancerId) || freelancersList.find(f => f.ownerId === userSession?.uid) || freelancersList[0]} isOwnProfile={Boolean(userSession && (isAdmin || freelancersList.find(f => f.id === selectedFreelancerId)?.ownerId === userSession.uid))} onUpdateFreelancer={async (updated) => { if (!userSession) return; const current = freelancersList.find(f => f.id === updated.id); if (!isAdmin && current?.ownerId !== userSession.uid) return; const saved = { ...updated, ownerId: updated.ownerId || userSession.uid }; try { await updateFreelancerProfile(saved); setFreelancersList(prev => prev.map(f => f.id === saved.id ? saved : f)); } catch (err) { console.error('Failed to update freelancer profile in Firestore:', err); } }} onStartChat={(id) => { setSelectedFreelancerId(id); setActiveTab('chats'); }} onBack={() => { setSelectedFreelancerId(null); setActiveTab('freelancers'); }} selectedCurrency={selectedCurrency} /> : activeTab === 'chats' ? <ChatDashboard currentLang={currentLang} currentUserId={userSession?.uid} initialSelectedId={selectedFreelancerId || undefined} onBackToJobs={() => { setSelectedFreelancerId(null); setActiveTab('freelancers'); }} /> : activeTab === 'wallet' && isAdmin ? <WalletDashboard currentLang={currentLang} onClose={() => setActiveTab('home')} selectedCurrency={selectedCurrency} /> : activeTab === 'settings' ? <SettingsView currentLang={currentLang} onClose={() => setActiveTab('home')} selectedCurrency={selectedCurrency} /> : home}</div>
+        {activeTab === 'home' && <section className="text-center max-w-5xl mx-auto mt-2 sm:mt-6 mb-10 sm:mb-12"><motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-white/75 dark:bg-slate-900/75 border border-indigo-100/80 dark:border-indigo-900/50 rounded-full text-indigo-700 dark:text-indigo-300 text-[10px] font-bold tracking-[0.12em] uppercase shadow-sm backdrop-blur"><Sparkles className="w-3.5 h-3.5" /><span>{currentLang === 'uz' ? 'Freelance.uz — OʻZBEKISTON MILLIY PLATFORMASI' : currentLang === 'ru' ? 'Freelance.uz — НАЦИОНАЛЬНАЯ ПЛАТFORMA УЗБЕКИSTANA' : 'Freelance.uz — NATIONAL FREELANCE MARKET OF UZBEKISTAN'}</span></motion.div><motion.h1 initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="mt-5 text-4xl sm:text-5xl md:text-6xl font-display font-extrabold tracking-[-0.045em] text-slate-950 dark:text-white leading-[0.98]">{strings.heroTitle}</motion.h1><motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-5 text-sm sm:text-base text-slate-500 dark:text-slate-400 max-w-2xl mx-auto leading-7">{strings.heroSubtitle}</motion.p></section>}
+        <div className="mb-16 sm:mb-20 max-w-7xl mx-auto">{activeTab === 'home' ? home : activeTab === 'jobs' ? <JobList currentLang={currentLang} jobs={jobs} searchTerm={searchTerm} onSearchChange={setSearchTerm} selectedCurrency={selectedCurrency} /> : activeTab === 'freelancers' ? <FreelancerList currentLang={currentLang} searchTerm={searchTerm} onSearchChange={setSearchTerm} freelancers={freelancersList} onSelectFreelancer={(id) => { setSelectedFreelancerId(id); setActiveTab('profile'); }} selectedCurrency={selectedCurrency} /> : activeTab === 'profile' ? <ProfileView currentLang={currentLang} freelancer={activeProfile || ownProfile || freelancersList[0]} isOwnProfile={Boolean(userSession && activeProfile?.ownerId === userSession.uid)} onUpdateFreelancer={async (updated) => { if (!userSession) return; const current = freelancersList.find(f => f.id === updated.id); if (current?.ownerId !== userSession.uid && !isAdmin) return; const saved = { ...updated, ownerId: updated.ownerId || userSession.uid }; try { await updateFreelancerProfile(saved); setFreelancersList(prev => prev.map(f => f.id === saved.id ? saved : f)); } catch (err) { console.error('Failed to update freelancer profile in Firestore:', err); } }} onStartChat={(id) => { setSelectedFreelancerId(id); setActiveTab('chats'); }} onBack={() => { setSelectedFreelancerId(null); setActiveTab('freelancers'); }} selectedCurrency={selectedCurrency} /> : activeTab === 'chats' ? <ChatDashboard currentLang={currentLang} currentUserId={userSession?.uid} initialSelectedId={selectedFreelancerId || undefined} onBackToJobs={() => { setSelectedFreelancerId(null); setActiveTab('freelancers'); }} /> : activeTab === 'wallet' && isAdmin ? <WalletDashboard currentLang={currentLang} onClose={() => setActiveTab('home')} selectedCurrency={selectedCurrency} /> : activeTab === 'settings' ? <SettingsView currentLang={currentLang} onClose={() => setActiveTab('home')} selectedCurrency={selectedCurrency} /> : home}</div>
       </main>
       <footer className="w-full bg-white/70 dark:bg-slate-950/70 backdrop-blur-xl border-t border-slate-200/70 dark:border-slate-900 py-10 px-6 z-10"><div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400"><span>Freelance.uz © {new Date().getFullYear()}</span><span className="font-medium">Ish • Iste’dod • Imkoniyat</span></div></footer>
       <AnimatePresence>{authModal.isOpen && <AuthModal mode={authModal.mode} onClose={() => setAuthModal({ ...authModal, isOpen: false })} onAuthSuccess={(session) => { setUserSession(session); localStorage.setItem('freelance_uz_session', JSON.stringify(session)); setAuthModal({ isOpen: false, mode: 'login' }); }} currentLang={currentLang} />}</AnimatePresence>
