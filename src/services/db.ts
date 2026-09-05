@@ -13,7 +13,6 @@ import { MOCK_JOBS, MOCK_FREELANCERS } from '../data/mockData';
 const DEMO_WALLET_BALANCE_UZS = 48_250_000;
 const DEMO_ESCROW_UZS = 135_000_000;
 
-// --- Jobs Data Management ---
 export async function getJobs(): Promise<Job[]> {
   const path = 'jobs';
   try {
@@ -38,6 +37,7 @@ export async function getJobs(): Promise<Job[]> {
         location: data.location || 'Uzbekistan',
         datePosted: data.datePosted || 'just_now',
         proposalsCount: Number(data.proposalsCount || 0),
+        clientId: data.clientId,
       });
     });
     return jobs;
@@ -49,13 +49,14 @@ export async function getJobs(): Promise<Job[]> {
 
 export async function postJob(job: Job): Promise<void> {
   const path = `jobs/${job.id}`;
-  if (!auth.currentUser) {
-    throw new Error('AUTH_REQUIRED: You must be signed in to publish a job.');
-  }
+  const user = auth.currentUser;
+  if (!user) throw new Error('AUTH_REQUIRED: You must be signed in to publish a job.');
+  if (job.clientId !== user.uid) throw new Error('FORBIDDEN: Job owner does not match the signed-in user.');
 
   try {
     await setDoc(doc(db, 'jobs', job.id), {
       ...job,
+      clientId: user.uid,
       createdAt: serverTimestamp(),
     });
   } catch (error) {
@@ -64,7 +65,6 @@ export async function postJob(job: Job): Promise<void> {
   }
 }
 
-// --- Freelancers Data Management ---
 export async function getFreelancers(): Promise<Freelancer[]> {
   const path = 'freelancers';
   try {
@@ -76,6 +76,7 @@ export async function getFreelancers(): Promise<Freelancer[]> {
       const data = docSnap.data();
       freelancers.push({
         id: data.id || docSnap.id,
+        ownerId: data.ownerId,
         name: data.name || 'Unknown freelancer',
         title: data.title || '',
         avatar: data.avatar || '',
@@ -104,13 +105,16 @@ export async function getFreelancers(): Promise<Freelancer[]> {
 
 export async function updateFreelancerProfile(fl: Freelancer): Promise<void> {
   const path = `freelancers/${fl.id}`;
-  if (!auth.currentUser) {
-    throw new Error('AUTH_REQUIRED: You must be signed in to update a profile.');
+  const user = auth.currentUser;
+  if (!user) throw new Error('AUTH_REQUIRED: You must be signed in to update a profile.');
+  if (fl.ownerId !== user.uid && user.email?.trim().toLowerCase() !== 'ramanovsardor8@gmail.com') {
+    throw new Error('FORBIDDEN: Freelancer profile owner does not match the signed-in user.');
   }
 
   try {
     await setDoc(doc(db, 'freelancers', fl.id), {
       ...fl,
+      ownerId: fl.ownerId || user.uid,
       updatedAt: serverTimestamp(),
     });
   } catch (error) {
@@ -119,7 +123,6 @@ export async function updateFreelancerProfile(fl: Freelancer): Promise<void> {
   }
 }
 
-// --- User Wallet & Balance Management ---
 export interface WalletData {
   userId: string;
   balanceUZS: number;
@@ -129,56 +132,25 @@ export interface WalletData {
 export async function getWallet(userId: string): Promise<WalletData> {
   const path = `wallets/${userId}`;
   if (!auth.currentUser) {
-    return {
-      userId,
-      balanceUZS: DEMO_WALLET_BALANCE_UZS,
-      totalEscrowActiveSum: DEMO_ESCROW_UZS,
-    };
+    return { userId, balanceUZS: DEMO_WALLET_BALANCE_UZS, totalEscrowActiveSum: DEMO_ESCROW_UZS };
   }
-
-  if (auth.currentUser.uid !== userId) {
-    throw new Error('FORBIDDEN: You can only access your own wallet.');
-  }
+  if (auth.currentUser.uid !== userId) throw new Error('FORBIDDEN: You can only access your own wallet.');
 
   try {
-    const docRef = doc(db, 'wallets', userId);
-    const docSnap = await getDoc(docRef);
-    if (!docSnap.exists()) {
-      // Wallet creation is intentionally not performed from the client.
-      // Firestore rules make wallet documents server-managed.
-      return {
-        userId,
-        balanceUZS: 0,
-        totalEscrowActiveSum: 0,
-      };
-    }
-
+    const docSnap = await getDoc(doc(db, 'wallets', userId));
+    if (!docSnap.exists()) return { userId, balanceUZS: 0, totalEscrowActiveSum: 0 };
     const data = docSnap.data();
-    return {
-      userId,
-      balanceUZS: Number(data.balanceUZS || 0),
-      totalEscrowActiveSum: Number(data.totalEscrowActiveSum || 0),
-    };
+    return { userId, balanceUZS: Number(data.balanceUZS || 0), totalEscrowActiveSum: Number(data.totalEscrowActiveSum || 0) };
   } catch (error) {
     handleFirestoreError(error, OperationType.GET, path);
     throw error;
   }
 }
 
-// Client-side balance mutation is deliberately blocked. Real withdrawals
-// must be processed by a trusted server/Cloud Function after payment checks.
-export async function updateWalletBalance(
-  userId: string,
-  _balanceUZS: number,
-  _totalEscrowActiveSum: number,
-): Promise<void> {
+export async function updateWalletBalance(userId: string, _balanceUZS: number, _totalEscrowActiveSum: number): Promise<void> {
   const path = `wallets/${userId}`;
-  if (!auth.currentUser) {
-    throw new Error('AUTH_REQUIRED: Sign in before requesting a withdrawal.');
-  }
-  if (auth.currentUser.uid !== userId) {
-    throw new Error('FORBIDDEN: You can only modify your own wallet.');
-  }
+  if (!auth.currentUser) throw new Error('AUTH_REQUIRED: Sign in before requesting a withdrawal.');
+  if (auth.currentUser.uid !== userId) throw new Error('FORBIDDEN: You can only modify your own wallet.');
   throw new Error('PAYOUT_BACKEND_REQUIRED: Wallet balances are server-managed and cannot be changed from the browser.');
 }
 
@@ -195,12 +167,8 @@ export interface WalletTransaction {
 
 export async function getWalletTransactions(userId: string): Promise<WalletTransaction[]> {
   const path = `wallets/${userId}/transactions`;
-  if (!auth.currentUser) {
-    return [];
-  }
-  if (auth.currentUser.uid !== userId) {
-    throw new Error('FORBIDDEN: You can only access your own wallet transactions.');
-  }
+  if (!auth.currentUser) return [];
+  if (auth.currentUser.uid !== userId) throw new Error('FORBIDDEN: You can only access your own wallet transactions.');
 
   try {
     const querySnapshot = await getDocs(collection(db, 'wallets', userId, 'transactions'));
@@ -225,15 +193,9 @@ export async function getWalletTransactions(userId: string): Promise<WalletTrans
   }
 }
 
-// Client-created wallet transaction records are disabled for the same reason
-// as balance writes: transaction history must be generated by trusted backend code.
 export async function addWalletTransaction(userId: string, _tx: WalletTransaction): Promise<void> {
   const path = `wallets/${userId}/transactions`;
-  if (!auth.currentUser) {
-    throw new Error('AUTH_REQUIRED: Sign in before creating a transaction.');
-  }
-  if (auth.currentUser.uid !== userId) {
-    throw new Error('FORBIDDEN: You can only modify your own wallet transactions.');
-  }
+  if (!auth.currentUser) throw new Error('AUTH_REQUIRED: Sign in before creating a transaction.');
+  if (auth.currentUser.uid !== userId) throw new Error('FORBIDDEN: You can only modify your own wallet transactions.');
   throw new Error('PAYOUT_BACKEND_REQUIRED: Transaction records are server-managed and cannot be created from the browser.');
 }
