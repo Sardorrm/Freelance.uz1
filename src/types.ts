@@ -1,16 +1,12 @@
 export type Language = 'uz' | 'ru' | 'en';
 
 // --- Escrow / Deals ---
-// A Deal represents one client paying one freelancer for one job through
-// the platform's escrow flow. Client creates it (pending_payment); every
-// later status change is written only by a Cloud Function once Payme
-// confirms the payment (see /functions).
 export type DealStatus =
-  | 'pending_payment' // client created it, hasn't paid yet
-  | 'in_escrow'        // Payme confirmed payment, funds held by the platform
-  | 'released'         // funds released to the freelancer's wallet
-  | 'refunded'          // funds returned to the client
-  | 'disputed';         // flagged for manual admin review
+  | 'pending_payment'
+  | 'in_escrow'
+  | 'released'
+  | 'refunded'
+  | 'disputed';
 
 export interface Deal {
   id: string;
@@ -30,7 +26,6 @@ export interface Deal {
 }
 
 export type JobType = 'fixed' | 'hourly';
-
 export type JobCategory = 'development' | 'design' | 'marketing' | 'translation' | 'video' | 'other';
 
 export interface Job {
@@ -48,6 +43,8 @@ export interface Job {
   location: string;
   datePosted: string;
   proposalsCount: number;
+  // Firebase ownership metadata. Kept optional for compatibility with old/mock jobs.
+  clientId?: string;
 }
 
 export interface PortfolioItem {
@@ -87,10 +84,11 @@ export interface Freelancer {
   reviews?: ReviewItem[];
   coverImage?: string;
   githubUsername?: string;
+  // Firebase ownership metadata. Kept optional for old public profiles.
+  ownerId?: string;
 }
 
 export interface LanguageStrings {
-  // Navigation elements
   findJobs: string;
   findFreelancers: string;
   howItWorks: string;
@@ -98,8 +96,6 @@ export interface LanguageStrings {
   login: string;
   register: string;
   logout: string;
-  
-  // Hero section
   heroTitle: string;
   heroSubtitle: string;
   searchPlaceholder: string;
@@ -107,16 +103,12 @@ export interface LanguageStrings {
   freelancersCount: string;
   jobsCount: string;
   completedCount: string;
-  
-  // Category Labels
   development: string;
   design: string;
   marketing: string;
   translation: string;
   video: string;
   other: string;
-  
-  // Job specific translations
   browseJobsTitle: string;
   browseJobsSubtitle: string;
   filterPrice: string;
@@ -132,8 +124,6 @@ export interface LanguageStrings {
   proposals: string;
   daysAgo: string;
   justNow: string;
-  
-  // Freelancer specific translations
   browseFreelancersTitle: string;
   browseFreelancersSubtitle: string;
   hireMe: string;
@@ -141,14 +131,10 @@ export interface LanguageStrings {
   jobsCompleted: string;
   memberSince: string;
   verifiedBadge: string;
-  
-  // Interactive items
   contactInfo: string;
   successMessage: string;
   closeBtn: string;
   noResults: string;
-  
-  // Client forms
   postJobTitle: string;
   postJobSubtitle: string;
   jobTitleInput: string;
@@ -156,8 +142,6 @@ export interface LanguageStrings {
   jobBudgetInput: string;
   submitJobBtn: string;
   jobCreatedSuccess: string;
-  
-  // General forms
   fullName: string;
   email: string;
   password: string;
