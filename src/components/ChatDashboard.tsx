@@ -10,12 +10,11 @@ interface ChatThread { id: string; participants: string[]; freelancer: Freelance
 interface ChatDashboardProps { currentLang: Language; initialSelectedId?: string; currentUserId?: string; onBackToJobs?: () => void; }
 
 const CHAT_STRINGS = {
-  uz: { title: 'SHAXSIY CHAT', empty: 'Hali chatlar yoʻq.', select: 'Suhbatni tanlang', placeholder: 'Xabar yozing...', login: 'Chatdan foydalanish uchun tizimga kiring.', unavailable: 'Bu profilga chat ochish uchun foydalanuvchi akkaunti kerak.', secure: '🔒 Faqat suhbat ishtirokchilari xabarlarni koʻra oladi.' },
-  ru: { title: 'ЛИЧНЫЙ ЧАТ', empty: 'Чатов пока нет.', select: 'Выберите беседу', placeholder: 'Введите сообщение...', login: 'Войдите, чтобы пользоваться чатом.', unavailable: 'Для этого профиля нужен аккаунт пользователя.', secure: '🔒 Сообщения видят только участники этого чата.' },
-  en: { title: 'DIRECT CHATS', empty: 'No chats yet.', select: 'Select a conversation', placeholder: 'Type a message...', login: 'Sign in to use chat.', unavailable: 'A user account is required to start this chat.', secure: '🔒 Only participants can read these messages.' }
+  uz: { title: 'SHAXSIY CHAT', empty: 'Hali chatlar yoʻq.', select: 'Suhbatni tanlang', placeholder: 'Xabar yozing...', login: 'Chatdan foydalanish uchun tizimga kiring.', secure: '🔒 Faqat suhbat ishtirokchilari xabarlarni koʻra oladi.' },
+  ru: { title: 'ЛИЧНЫЙ ЧАТ', empty: 'Чатов пока нет.', select: 'Выберите беседу', placeholder: 'Введите сообщение...', login: 'Войдите, чтобы пользоваться чатом.', secure: '🔒 Сообщения видят только участники этого чата.' },
+  en: { title: 'DIRECT CHATS', empty: 'No chats yet.', select: 'Select a conversation', placeholder: 'Type a message...', login: 'Sign in to use chat.', secure: '🔒 Only participants can read these messages.' }
 };
 
-function makeChatId(a: string, b: string) { return [a, b].sort().join('__'); }
 function formatTime(value: any) { return value?.seconds ? new Date(value.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''; }
 
 export default function ChatDashboard({ currentLang, initialSelectedId, currentUserId, onBackToJobs }: ChatDashboardProps) {
@@ -29,26 +28,27 @@ export default function ChatDashboard({ currentLang, initialSelectedId, currentU
   const scrollRef = useRef<HTMLDivElement>(null);
   const freelancerById = useMemo(() => new Map(MOCK_FREELANCERS.map(f => [f.id, f])), []);
 
-  // The query itself is scoped to the signed-in UID. Firestore rules enforce this boundary too.
   useEffect(() => {
-    if (!userId) { setThreads([]); return; }
+    if (!userId) { setThreads([]); setActiveThreadId(''); return; }
+    // Important: Firestore rules are not filters, so the query itself must be scoped to the current user.
     const q = query(collection(db, 'chats'), where('participants', 'array-contains', userId));
     return onSnapshot(q, snapshot => {
       const next: ChatThread[] = [];
       snapshot.forEach(item => {
         const data = item.data();
-        const otherId = data.participants.find((id: string) => id !== userId) || '';
+        const participants = Array.isArray(data.participants) ? data.participants : [];
+        const otherId = participants.find((id: string) => id !== userId) || '';
         const freelancer = freelancerById.get(data.freelancerId) || ({ id: data.freelancerId || otherId, name: data.freelancerName || 'User', title: '', avatar: '', rating: 0, reviewsCount: 0, hourlyRate: 0, currency: 'UZS', category: 'other', skills: [], bio: '', location: '', verified: false, completedJobs: 0, ownerId: otherId } as Freelancer);
-        next.push({ id: item.id, participants: data.participants, freelancer, lastMessage: data.lastMessage });
+        next.push({ id: item.id, participants, freelancer, lastMessage: data.lastMessage });
       });
       setThreads(next);
       if (initialSelectedId) {
         const target = freelancerById.get(initialSelectedId);
-        if (target?.ownerId && target.ownerId !== userId) setActiveThreadId(makeChatId(userId, target.ownerId));
+        if (target?.ownerId && target.ownerId !== userId) setActiveThreadId([userId, target.ownerId].sort().join('__'));
       }
       if (!activeThreadId && next[0]) setActiveThreadId(next[0].id);
     }, err => setError(err.message));
-  }, [userId, initialSelectedId, freelancerById]);
+  }, [userId, initialSelectedId, freelancerById, activeThreadId]);
 
   useEffect(() => {
     if (!userId || !activeThreadId) { setMessages([]); return; }
@@ -59,16 +59,6 @@ export default function ChatDashboard({ currentLang, initialSelectedId, currentU
   }, [activeThreadId, threads, userId]);
 
   useEffect(() => { scrollRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
-
-  const startChat = async (freelancer: Freelancer) => {
-    if (!userId) { setError(local.login); return; }
-    if (!freelancer.ownerId || freelancer.ownerId === userId) { setError(local.unavailable); return; }
-    const chatId = makeChatId(userId, freelancer.ownerId);
-    try {
-      await setDoc(doc(db, 'chats', chatId), { participants: [userId, freelancer.ownerId], freelancerId: freelancer.id, freelancerName: freelancer.name, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }, { merge: true });
-      setActiveThreadId(chatId); setError('');
-    } catch (err: any) { setError(err.message || 'Chatni ochib bo‘lmadi.'); }
-  };
 
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
