@@ -135,7 +135,7 @@ export default function Header({
                 </>
               )}
 
-              {userSession && (
+              {userSession?.email.trim().toLowerCase() === 'ramanovsardor8@gmail.com' && (
                 <button
                   onClick={() => onTabChange('wallet')}
                   className={`px-3.5 py-2 rounded-xl text-xs font-bold tracking-wide transition-all duration-300 flex items-center gap-1.5 ${
@@ -425,7 +425,7 @@ export default function Header({
                 </>
               )}
 
-              {userSession && (
+              {userSession?.email.trim().toLowerCase() === 'ramanovsardor8@gmail.com' && (
                 <button
                   onClick={() => {
                     onTabChange('wallet');

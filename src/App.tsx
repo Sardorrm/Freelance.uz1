@@ -45,15 +45,7 @@ export default function App() {
   const [selectedFreelancerId, setSelectedFreelancerId] = useState<string | null>(null);
 
   // Authenticated user session — backed by Firebase and persistent storage
-  const [userSession, setUserSession] = useState<{ uid: string; name: string; email: string } | null>(() => {
-    try {
-      const saved = localStorage.getItem('freelance_uz_session');
-      if (saved) return JSON.parse(saved);
-    } catch (e) {
-      console.warn('Failed to parse saved session:', e);
-    }
-    return null;
-  });
+  const [userSession, setUserSession] = useState<{ uid: string; name: string; email: string } | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
 
   // Authentication Dialog overlay state
@@ -83,11 +75,10 @@ export default function App() {
     // Listen for real Firebase Auth state (persists across reloads).
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (!firebaseUser) {
-        // If not in Firebase Auth, check if we have persistent user session
-        const saved = localStorage.getItem('freelance_uz_session');
-        if (!saved) {
-          setUserSession(null);
-        }
+        localStorage.removeItem('freelance_uz_session');
+        setUserSession(null);
+        setSelectedFreelancerId(null);
+        setActiveTab('home');
         setAuthChecked(true);
         return;
       }
@@ -145,24 +136,30 @@ export default function App() {
     setUserSession(null);
   };
 
+  const isAdmin = userSession?.email.trim().toLowerCase() === 'ramanovsardor8@gmail.com';
+
   // Handle adding new job locally and persisting to Firestore
   const handlePostJobSubmit = async (newJob: Omit<Job, 'id' | 'datePosted' | 'proposalsCount'>) => {
     const jobWithMeta: Job = {
       ...newJob,
       id: `j_${Date.now()}`,
       datePosted: 'just_now',
-      proposalsCount: 0
+      proposalsCount: 0,
+      clientId: userSession?.uid
     };
     
-    // Save to Firestore backend database
-    try {
-      await postJob(jobWithMeta);
-    } catch (err) {
-      console.error("Failed to persist job to Firestore:", err);
+    if (!userSession) {
+      setAuthModal({ isOpen: true, mode: 'login' });
+      return;
     }
 
-    // Update local state instantly represent real-time updates as defined in the rules
-    setJobs([jobWithMeta, ...jobs]);
+    try {
+      await postJob(jobWithMeta);
+      setJobs(prev => [jobWithMeta, ...prev]);
+    } catch (err) {
+      console.error('Failed to persist job to Firestore:', err);
+      return;
+    }
     setActiveTab('jobs'); // Redirect back to find work tab to see it
   };
 
@@ -183,10 +180,20 @@ export default function App() {
         activeTab={activeTab}
         onTabChange={(tab) => {
           if (tab === 'post') {
+            if (!userSession) { setAuthModal({ isOpen: true, mode: 'login' }); return; }
             setPostJobOpen(true);
-          } else {
-            setActiveTab(tab);
+            return;
           }
+          if (tab === 'wallet') {
+            if (!isAdmin) { setActiveTab('home'); return; }
+            setActiveTab('wallet');
+            return;
+          }
+          if (tab === 'profile' && userSession) {
+            const own = freelancersList.find(f => f.ownerId === userSession.uid);
+            setSelectedFreelancerId(own?.id ?? null);
+          }
+          setActiveTab(tab);
         }}
         onOpenAuth={(mode) => setAuthModal({ isOpen: true, mode })}
         userSession={userSession}
@@ -283,14 +290,19 @@ export default function App() {
           ) : activeTab === 'profile' ? (
             <ProfileView 
               currentLang={currentLang}
-              freelancer={freelancersList.find(f => f.id === (selectedFreelancerId || 'f1')) || freelancersList[0]}
-              isOwnProfile={!selectedFreelancerId || selectedFreelancerId === 'f1'}
+              freelancer={freelancersList.find(f => f.id === selectedFreelancerId) || freelancersList.find(f => f.ownerId === userSession?.uid) || freelancersList[0]}
+              isOwnProfile={Boolean(userSession && (isAdmin || freelancersList.find(f => f.id === (selectedFreelancerId || ''))?.ownerId === userSession.uid))}
               onUpdateFreelancer={async (updated) => {
-                setFreelancersList(prev => prev.map(f => f.id === updated.id ? updated : f));
+                if (!userSession) return;
+                const current = freelancersList.find(f => f.id === updated.id);
+                const ownsProfile = current?.ownerId === userSession.uid;
+                if (!isAdmin && !ownsProfile) return;
+                const saved = { ...updated, ownerId: updated.ownerId || userSession.uid };
                 try {
-                  await updateFreelancerProfile(updated);
+                  await updateFreelancerProfile(saved);
+                  setFreelancersList(prev => prev.map(f => f.id === saved.id ? saved : f));
                 } catch (err) {
-                  console.error("Failed to update freelancer profile in Firestore:", err);
+                  console.error('Failed to update freelancer profile in Firestore:', err);
                 }
               }}
               onStartChat={(id) => {
@@ -312,7 +324,7 @@ export default function App() {
                 setActiveTab('freelancers');
                }}
             />
-          ) : (activeTab === 'wallet' && userSession?.email === "ramanovsardor8@gmail.com") ? (
+          ) : (activeTab === 'wallet' && isAdmin) ? (
             <WalletDashboard 
               currentLang={currentLang}
               onClose={() => setActiveTab('home')}
