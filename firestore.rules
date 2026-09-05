@@ -13,8 +13,6 @@ service cloud.firestore {
       return isSignedIn() && request.auth.token.email == 'ramanovsardor8@gmail.com';
     }
 
-    // Users: users can read profiles and create/update only their own profile.
-    // Admin may read/update profiles for moderation. Passwords must never be stored here.
     match /users/{userId} {
       allow read: if isSignedIn();
       allow create: if isOwner(userId) && !('password' in request.resource.data);
@@ -22,7 +20,6 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // Jobs are public to read. Only the owner or admin can modify/delete a job.
     match /jobs/{jobId} {
       allow read: if true;
       allow create: if isSignedIn() && request.resource.data.clientId == request.auth.uid;
@@ -30,8 +27,6 @@ service cloud.firestore {
       allow delete: if isSignedIn() && (resource.data.clientId == request.auth.uid || isAdmin());
     }
 
-    // Public freelancer profiles. Existing legacy records without ownerId remain readable.
-    // New/updated profiles can only be changed by their owner or admin.
     match /freelancers/{freelancerId} {
       allow read: if true;
       allow create: if isSignedIn() && (request.resource.data.ownerId == request.auth.uid || isAdmin());
@@ -39,16 +34,26 @@ service cloud.firestore {
       allow delete: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
     }
 
-    // Chats must be tightened to participant-based access before production use.
-    // Keep authenticated access for now so existing chat documents do not break.
+    // Direct chats: chat documents must contain a participants array of Firebase UIDs.
+    // A user can only see or modify a chat they belong to.
     match /chats/{chatId} {
-      allow read, write: if isSignedIn();
+      allow read, create, update: if isSignedIn() &&
+        (isAdmin() || request.auth.uid in resource.data.participants ||
+         request.auth.uid in request.resource.data.participants);
+      allow delete: if isSignedIn() &&
+        (isAdmin() || request.auth.uid in resource.data.participants);
+
       match /messages/{messageId} {
-        allow read, write: if isSignedIn();
+        allow read, create: if isSignedIn() &&
+          (isAdmin() || request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants);
+        allow update, delete: if isSignedIn() &&
+          (isAdmin() || (
+            request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants &&
+            resource.data.senderId == request.auth.uid
+          ));
       }
     }
 
-    // Wallets and transaction history are server-managed. Clients can only read their own.
     match /wallets/{userId} {
       allow read: if isOwner(userId) || isAdmin();
       allow write: if false;
@@ -58,8 +63,6 @@ service cloud.firestore {
       }
     }
 
-    // Escrow deals: participants/admin can read. Client creates only pending_payment.
-    // All subsequent state changes are server-side after payment confirmation.
     match /deals/{dealId} {
       allow read: if isSignedIn() &&
         (request.auth.uid == resource.data.clientId ||
@@ -71,7 +74,6 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
-    // Default deny: every collection not explicitly listed above is protected.
     match /{document=**} {
       allow read, write: if false;
     }
