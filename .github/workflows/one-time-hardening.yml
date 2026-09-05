@@ -1,0 +1,46 @@
+name: One-time app hardening
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    if: ${{ !contains(github.event.head_commit.message, '[hardening-applied]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch application security and ownership
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          app = Path('src/App.tsx')
+          s = app.read_text()
+          s = s.replace("const [userSession, setUserSession] = useState<{ uid: string; name: string; email: string } | null>(() => {\n    try {\n      const saved = localStorage.getItem('freelance_uz_session');\n      if (saved) return JSON.parse(saved);\n    } catch (e) {\n      console.warn('Failed to parse saved session:', e);\n    }\n    return null;\n  });", "const [userSession, setUserSession] = useState<{ uid: string; name: string; email: string } | null>(null);")
+          s = s.replace("      if (!firebaseUser) {\n        // If not in Firebase Auth, check if we have persistent user session\n        const saved = localStorage.getItem('freelance_uz_session');\n        if (!saved) {\n          setUserSession(null);\n        }\n        setAuthChecked(true);\n        return;\n      }", "      if (!firebaseUser) {\n        localStorage.removeItem('freelance_uz_session');\n        setUserSession(null);\n        setSelectedFreelancerId(null);\n        setActiveTab('home');\n        setAuthChecked(true);\n        return;\n      }")
+          s = s.replace("  // Handle adding new job locally and persisting to Firestore\n  const handlePostJobSubmit", "  const isAdmin = userSession?.email.trim().toLowerCase() === 'ramanovsardor8@gmail.com';\n\n  // Handle adding new job locally and persisting to Firestore\n  const handlePostJobSubmit")
+          s = s.replace("      proposalsCount: 0\n    };", "      proposalsCount: 0,\n      clientId: userSession?.uid\n    };", 1)
+          s = s.replace("    // Save to Firestore backend database\n    try {\n      await postJob(jobWithMeta);\n    } catch (err) {\n      console.error(\"Failed to persist job to Firestore:\", err);\n    }\n\n    // Update local state instantly represent real-time updates as defined in the rules\n    setJobs([jobWithMeta, ...jobs]);", "    if (!userSession) {\n      setAuthModal({ isOpen: true, mode: 'login' });\n      return;\n    }\n\n    try {\n      await postJob(jobWithMeta);\n      setJobs(prev => [jobWithMeta, ...prev]);\n    } catch (err) {\n      console.error('Failed to persist job to Firestore:', err);\n      return;\n    }")
+          s = s.replace("        onTabChange={(tab) => {\n          if (tab === 'post') {\n            setPostJobOpen(true);\n          } else {\n            setActiveTab(tab);\n          }\n        }}", "        onTabChange={(tab) => {\n          if (tab === 'post') {\n            if (!userSession) { setAuthModal({ isOpen: true, mode: 'login' }); return; }\n            setPostJobOpen(true);\n            return;\n          }\n          if (tab === 'wallet') {\n            if (!isAdmin) { setActiveTab('home'); return; }\n            setActiveTab('wallet');\n            return;\n          }\n          if (tab === 'profile' && userSession) {\n            const own = freelancersList.find(f => f.ownerId === userSession.uid);\n            setSelectedFreelancerId(own?.id ?? null);\n          }\n          setActiveTab(tab);\n        }}")
+          s = s.replace("freelancer={freelancersList.find(f => f.id === (selectedFreelancerId || 'f1')) || freelancersList[0]}\n              isOwnProfile={!selectedFreelancerId || selectedFreelancerId === 'f1'}", "freelancer={freelancersList.find(f => f.id === selectedFreelancerId) || freelancersList.find(f => f.ownerId === userSession?.uid) || freelancersList[0]}\n              isOwnProfile={Boolean(userSession && (isAdmin || freelancersList.find(f => f.id === (selectedFreelancerId || ''))?.ownerId === userSession.uid))}")
+          s = s.replace("              onUpdateFreelancer={async (updated) => {\n                setFreelancersList(prev => prev.map(f => f.id === updated.id ? updated : f));\n                try {\n                  await updateFreelancerProfile(updated);\n                } catch (err) {\n                  console.error(\"Failed to update freelancer profile in Firestore:\", err);\n                }\n              }}", "              onUpdateFreelancer={async (updated) => {\n                if (!userSession) return;\n                const current = freelancersList.find(f => f.id === updated.id);\n                const ownsProfile = current?.ownerId === userSession.uid;\n                if (!isAdmin && !ownsProfile) return;\n                const saved = { ...updated, ownerId: updated.ownerId || userSession.uid };\n                try {\n                  await updateFreelancerProfile(saved);\n                  setFreelancersList(prev => prev.map(f => f.id === saved.id ? saved : f));\n                } catch (err) {\n                  console.error('Failed to update freelancer profile in Firestore:', err);\n                }\n              }}")
+          s = s.replace("activeTab === 'wallet' && userSession?.email === \"ramanovsardor8@gmail.com\"", "activeTab === 'wallet' && isAdmin")
+          app.write_text(s)
+
+          header = Path('src/components/Header.tsx')
+          h = header.read_text()
+          h = h.replace("{userSession && (\n                <button\n                  onClick={() => onTabChange('wallet')}", "{userSession?.email.trim().toLowerCase() === 'ramanovsardor8@gmail.com' && (\n                <button\n                  onClick={() => onTabChange('wallet')}")
+          h = h.replace("{userSession && (\n                <button\n                  onClick={() => {\n                    onTabChange('wallet');", "{userSession?.email.trim().toLowerCase() === 'ramanovsardor8@gmail.com' && (\n                <button\n                  onClick={() => {\n                    onTabChange('wallet');")
+          header.write_text(h)
+          PY
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/App.tsx src/components/Header.tsx .github/workflows/one-time-hardening.yml
+          git rm .github/workflows/one-time-hardening.yml
+          git commit -m 'fix: apply app hardening [hardening-applied]' || exit 0
+          git push
