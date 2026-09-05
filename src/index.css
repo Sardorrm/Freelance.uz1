@@ -1,9 +1,90 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
 @variant dark (&:where(.dark, .dark *));
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Outfit", sans-serif;
+}
+
+:root {
+  color-scheme: light;
+  --surface: #ffffff;
+  --surface-soft: #f7f8fc;
+  --page: #f5f7fb;
+  --ink: #101828;
+  --muted: #667085;
+  --line: #e7eaf0;
+  --brand: #4f46e5;
+  --brand-dark: #3730a3;
+  --accent: #10b981;
+}
+
+.dark {
+  color-scheme: dark;
+  --surface: #111827;
+  --surface-soft: #0f172a;
+  --page: #070b14;
+  --ink: #f8fafc;
+  --muted: #94a3b8;
+  --line: #1f2937;
+}
+
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  min-width: 320px;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(99,102,241,.08), transparent 30rem),
+    radial-gradient(circle at 92% 12%, rgba(16,185,129,.06), transparent 28rem),
+    var(--page);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+* { box-sizing: border-box; }
+button, input, textarea, select { font: inherit; }
+button { -webkit-tap-highlight-color: transparent; }
+::selection { background: rgba(79,70,229,.18); }
+
+/* Premium, quiet scrollbar */
+* { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+.dark * { scrollbar-color: #334155 transparent; }
+
+/* Shared interaction language */
+button:not(:disabled), a { transition: transform .18s ease, box-shadow .18s ease, background-color .18s ease, border-color .18s ease, color .18s ease, opacity .18s ease; }
+button:not(:disabled):active { transform: translateY(1px) scale(.99); }
+
+/* Better focus visibility without the default browser ring */
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: 3px solid rgba(99,102,241,.22);
+  outline-offset: 2px;
+}
+
+/* Soft elevation helpers used across the app */
+.premium-card {
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  border: 1px solid var(--line);
+  box-shadow: 0 10px 35px rgba(15,23,42,.055);
+  backdrop-filter: blur(18px);
+}
+.premium-card:hover { box-shadow: 0 18px 45px rgba(15,23,42,.09); }
+
+/* Native form controls should feel consistent on every screen */
+input, textarea, select {
+  border-color: var(--line);
+}
+input::placeholder, textarea::placeholder { color: #98a2b3; }
+
+/* Motion accessibility */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+  }
 }
