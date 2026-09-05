@@ -1,9 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Language, Freelancer } from '../types';
 import { MOCK_FREELANCERS } from '../data/mockData';
-import { TRANSLATIONS } from '../data/translations';
 import { auth, db } from '../firebase';
-import { addDoc, collection, onSnapshot, orderBy, query, serverTimestamp, setDoc, doc } from 'firebase/firestore';
+import { addDoc, collection, onSnapshot, orderBy, query, serverTimestamp, setDoc, doc, where } from 'firebase/firestore';
 import { Send, MessageSquare, CheckCheck } from 'lucide-react';
 
 interface ChatMessage { id: string; senderId: string; text: string; timestamp: string; }
@@ -30,15 +29,14 @@ export default function ChatDashboard({ currentLang, initialSelectedId, currentU
   const scrollRef = useRef<HTMLDivElement>(null);
   const freelancerById = useMemo(() => new Map(MOCK_FREELANCERS.map(f => [f.id, f])), []);
 
-  // Every user receives only their own chat list. Firestore rules enforce the same boundary server-side.
+  // The query itself is scoped to the signed-in UID. Firestore rules enforce this boundary too.
   useEffect(() => {
     if (!userId) { setThreads([]); return; }
-    const q = query(collection(db, 'chats'));
+    const q = query(collection(db, 'chats'), where('participants', 'array-contains', userId));
     return onSnapshot(q, snapshot => {
       const next: ChatThread[] = [];
       snapshot.forEach(item => {
         const data = item.data();
-        if (!Array.isArray(data.participants) || !data.participants.includes(userId)) return;
         const otherId = data.participants.find((id: string) => id !== userId) || '';
         const freelancer = freelancerById.get(data.freelancerId) || ({ id: data.freelancerId || otherId, name: data.freelancerName || 'User', title: '', avatar: '', rating: 0, reviewsCount: 0, hourlyRate: 0, currency: 'UZS', category: 'other', skills: [], bio: '', location: '', verified: false, completedJobs: 0, ownerId: otherId } as Freelancer);
         next.push({ id: item.id, participants: data.participants, freelancer, lastMessage: data.lastMessage });
