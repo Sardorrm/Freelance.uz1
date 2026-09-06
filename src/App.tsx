@@ -22,6 +22,7 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, doc, getDoc, onSnapshot } from 'firebase/firestore';
 
 const ADMIN_EMAIL = 'ramanovsardor8@gmail.com';
+const PUBLIC_FREELANCER_FILTER = (f: Freelancer) => f.id !== 'f1';
 
 type Tab = 'home' | 'jobs' | 'freelancers' | 'post' | 'wallet' | 'profile' | 'cabinet' | 'chats' | 'settings';
 
@@ -32,7 +33,7 @@ export default function App() {
   const [selectedCurrency, setSelectedCurrency] = useState<'UZS' | 'USD' | 'EUR'>('UZS');
   const [searchTerm, setSearchTerm] = useState('');
   const [jobs, setJobs] = useState<Job[]>(MOCK_JOBS);
-  const [freelancersList, setFreelancersList] = useState<Freelancer[]>(MOCK_FREELANCERS);
+  const [freelancersList, setFreelancersList] = useState<Freelancer[]>(MOCK_FREELANCERS.filter(PUBLIC_FREELANCER_FILTER));
   const [selectedFreelancerId, setSelectedFreelancerId] = useState<string | null>(null);
   const [userSession, setUserSession] = useState<{ uid: string; name: string; email: string } | null>(null);
   const [authModal, setAuthModal] = useState<{ isOpen: boolean; mode: 'login' | 'register' }>({ isOpen: false, mode: 'login' });
@@ -78,7 +79,10 @@ export default function App() {
 
     async function loadFirebaseData() {
       try { setJobs(await getJobs()); } catch (err) { console.error('Failed to load jobs from Firestore:', err); }
-      try { setFreelancersList(await getFreelancers()); } catch (err) { console.error('Failed to load freelancers from Firestore:', err); }
+      try {
+        const loadedFreelancers = await getFreelancers();
+        setFreelancersList(loadedFreelancers.filter(PUBLIC_FREELANCER_FILTER));
+      } catch (err) { console.error('Failed to load freelancers from Firestore:', err); }
     }
     loadFirebaseData();
     return () => { unsubscribeAuth(); unsubscribeJobs(); };
